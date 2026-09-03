@@ -77,6 +77,8 @@ jobs:
             COMMIT=${{ github.sha }}
           cache-from: type=gha,scope=build-webp
           cache-to: type=gha,mode=max,scope=build-webp
+          # 关闭 SLSA attestation：它会在 manifest 里产生多余 unknown/unknown 条目
+          provenance: false
 
       - name: Inspect published image
         run: docker buildx imagetools inspect ghcr.io/markbang/memos-webp:${{ steps.tag.outputs.value }}
