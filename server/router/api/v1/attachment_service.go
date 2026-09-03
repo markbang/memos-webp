@@ -152,24 +152,57 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 		}
 	}
 
-	// Strip EXIF metadata from images for privacy protection.
-	// This removes sensitive information like GPS location, device details, etc.
-	if shouldStripExif(create.Type) && !isAndroidMotionContainer(create.Payload.GetMotionMedia()) {
-		release, err := s.acquireImageProcessingSlot(ctx)
-		if err != nil {
-			return nil, status.Errorf(codes.ResourceExhausted, "too many image processing requests")
+	// Optimize raster attachments before they hit storage: downscale to a
+	// sane dimension cap and transcode to lossy WebP. This is where phone
+	// originals (commonly 4032px+, 5-10MB) become web-friendly (~1920px,
+	// a few hundred KB). EXIF metadata (GPS, device info) is dropped as a
+	// side effect of the re-encode. Configurable via
+	// MEMOS_IMAGE_MAX_DIMENSION and MEMOS_IMAGE_WEBP_QUALITY.
+	if !isAndroidMotionContainer(create.Payload.GetMotionMedia()) {
+		optimized := false
+		if isWebpOptimizableType(create.Type) {
+			release, err := s.acquireImageProcessingSlot(ctx)
+			if err != nil {
+				return nil, status.Errorf(codes.ResourceExhausted, "too many image processing requests")
+			}
+			compressResult, compressErr := compressAttachmentImage(create.Blob, create.Type)
+			release()
+			if compressErr != nil {
+				// Log warning but continue with the original image so uploads never fail.
+				slog.Warn("image optimization skipped; uploading original",
+					slog.String("type", create.Type),
+					slog.String("filename", create.Filename),
+					slog.String("error", compressErr.Error()))
+			} else if compressResult != nil {
+				create.Blob = compressResult.Blob
+				create.Type = "image/webp"
+				create.Filename = replaceExtWithWebp(create.Filename)
+				create.Size = int64(len(compressResult.Blob))
+				optimized = true
+			}
 		}
-		strippedBlob, stripErr := stripImageExif(create.Blob, create.Type)
-		release()
-		if stripErr != nil {
-			// Log warning but continue with original image to ensure uploads don't fail.
-			slog.Warn("failed to strip EXIF metadata from image",
-				slog.String("type", create.Type),
-				slog.String("filename", create.Filename),
-				slog.String("error", stripErr.Error()))
-		} else {
-			create.Blob = strippedBlob
-			create.Size = int64(len(strippedBlob))
+
+		// Fallback EXIF strip for formats the optimizer does not handle
+		// (e.g. TIFF/HEIC) or when the optimizer decided to keep the
+		// original. WebP is excluded here: it is not worth re-encoding an
+		// already-compressed WebP that the optimizer chose to keep.
+		if !optimized && shouldStripExif(create.Type) && create.Type != "image/webp" {
+			release, err := s.acquireImageProcessingSlot(ctx)
+			if err != nil {
+				return nil, status.Errorf(codes.ResourceExhausted, "too many image processing requests")
+			}
+			strippedBlob, stripErr := stripImageExif(create.Blob, create.Type)
+			release()
+			if stripErr != nil {
+				// Log warning but continue with original image to ensure uploads don't fail.
+				slog.Warn("failed to strip EXIF metadata from image",
+					slog.String("type", create.Type),
+					slog.String("filename", create.Filename),
+					slog.String("error", stripErr.Error()))
+			} else {
+				create.Blob = strippedBlob
+				create.Size = int64(len(strippedBlob))
+			}
 		}
 	}
 
