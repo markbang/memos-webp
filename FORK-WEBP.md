@@ -40,6 +40,23 @@ pnpm install && pnpm build
 docker build -f scripts/Dockerfile -t memos-webp .
 ```
 
+## 发布镜像（ghcr.io/markbang/memos-webp）
+
+GitHub Actions（`.github/workflows/build-publish-webp.yml`）已配好：
+
+- **手动触发**：仓库 Actions 页 → *Build and Publish WebP Image* → Run workflow（tag 默认 `0.30.0-webp`）；
+- **自动触发**：推送 `v*` tag。
+
+流程 = pnpm 构建前端 → buildx 双架构（linux/amd64 + linux/arm64）→ 直接推 ghcr 并打 manifest。
+
+本地手动发布（等价）：
+
+```bash
+cd web && pnpm install && pnpm release && cd ..
+docker build -f scripts/Dockerfile -t ghcr.io/markbang/memos-webp:0.30.0-webp .
+docker push ghcr.io/markbang/memos-webp:0.30.0-webp
+```
+
 ## 存量迁移工具 `tools/r2-webp-migrate`
 
 只对新上传生效；历史上 R2 里已有的原图用本工具批量处理。规则与上传链路一致，**原地覆盖同一 key**（预签名 URL、数据库记录全部不用动）。Motion 容器/动图/无法解码的对象自动跳过。
