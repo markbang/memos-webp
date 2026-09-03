@@ -1,0 +1,39 @@
+# memos-webp fork 部署配置（含上传 WebP 压缩）。
+#
+# 注意：不要用上游镜像 neosmemo/memos:0.30.0 —— 那是原版，没有 WebP 压缩。
+# 本仓库的镜像需要自己构建并推送（构建前必须先在 web/ 下 pnpm build 出 dist）：
+#
+#   docker build -f scripts/Dockerfile -t ghcr.io/markbang/memos-webp:0.30.0-webp .
+#   docker push ghcr.io/markbang/memos-webp:0.30.0-webp
+#
+# 然后直接 docker compose up -d；或用 build: 本地构建（见下方注释块）。
+services:
+  memos:
+    image: ${MEMOS_IMAGE:-ghcr.io/markbang/memos-webp:0.30.0-webp}
+    # 想本地构建而不是拉镜像时，取消下面注释并去掉上面 image 行：
+    # build:
+    #   context: .
+    #   dockerfile: scripts/Dockerfile
+    #   args:
+    #     VERSION: 0.30.0
+    container_name: memos
+    restart: unless-stopped
+    volumes:
+      - memos_data:/var/opt/memos
+    environment:
+      # 不要给值加引号：compose 会原样保留，MEMOS_INSTANCE_URL 会变成
+      # "'https://s.bangwu.top'"（带引号的脏值，线上就踩过这个坑）。
+      MEMOS_MODE: ${MEMOS_MODE:-prod}
+      MEMOS_PORT: ${MEMOS_PORT:-5230}
+      MEMOS_INSTANCE_URL: ${MEMOS_INSTANCE_URL:-https://s.bangwu.top}
+      # ---- fork 新增：上传图片压缩参数（可选）----
+      # 最长边像素上限；过大图片缩到该尺寸后转 WebP
+      MEMOS_IMAGE_MAX_DIMENSION: ${MEMOS_IMAGE_MAX_DIMENSION:-1920}
+      # WebP 有损质量 1..100
+      MEMOS_IMAGE_WEBP_QUALITY: ${MEMOS_IMAGE_WEBP_QUALITY:-85}
+    ports:
+      # 本机 5230 被占用、或经代理按随机端口转发时，可改回只写 "5230"（随机映射）。
+      - "5230:5230"
+
+volumes:
+  memos_data:
