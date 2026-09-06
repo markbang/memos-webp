@@ -11,6 +11,7 @@
 | `server/router/api/v1/attachment_image_compress.go` | **新增**。核心压缩函数：`imaging` 解码（自动 EXIF 翻转）→ 长边超限则 Lanczos 缩小 → `webp-go-pure` 无损度有损编码 |
 | `server/router/api/v1/attachment_service.go` | `CreateAttachment` 上传链路：EXIF 剥离块替换为「压缩优先、剥离回退」流水线 |
 | `go.mod` / `go.sum` | 新增纯 Go 依赖 `github.com/SeriousBug/webp-go-pure v1.2.0`（无 cgo） |
+| `web/src/components/MemoEditor/**`（attachment.ts / EditorContent.tsx / useFileUpload.ts / uploadService.ts） | 选图时立即把文件字节快照进内存，保存时不再回读 File 句柄，修复批量发图偶发 `NotReadableError`（浏览器回收句柄导致） |
 
 ## 行为规则
 
