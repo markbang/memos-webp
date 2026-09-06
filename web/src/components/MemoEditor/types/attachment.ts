@@ -22,6 +22,15 @@ export interface AttachmentItem {
 export interface LocalFile {
   readonly file: File;
   readonly previewUrl: string;
+  /**
+   * Snapshot of the file bytes, read as soon as the user picks the file.
+   * Saving/uploading then reads from this buffer instead of touching the
+   * original File handle again — browsers and mobile OSes can revoke file
+   * handles (surfacing as File API NotReadableError) if the page is
+   * backgrounded or too much time passes before "save" runs, which broke
+   * multi-image memo publishing.
+   */
+  readonly data?: Uint8Array;
   readonly origin?: "audio_recording" | "upload";
   readonly audioMeta?: {
     readonly durationSeconds: number;
@@ -30,6 +39,34 @@ export interface LocalFile {
 }
 
 const AUDIO_RECORDING_FILENAME_RE = /^(?:voice-(?:recording|note)|audio-recording)-(\d{8})-(\d{4,6})/i;
+
+async function readFileBytes(file: File): Promise<Uint8Array | undefined> {
+  // One retry after a short pause covers transient locks/placeholder-downloads.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return new Uint8Array(await file.arrayBuffer());
+    } catch {
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Returns a LocalFile whose {@link LocalFile.data} holds the file bytes read
+ * right now. Never throws: if the read fails the entry is returned unchanged
+ * (with no data) so the caller can still surface the file to the user, and the
+ * upload path will fail with a readable message naming the file.
+ */
+export async function snapshotLocalFile(localFile: LocalFile): Promise<LocalFile> {
+  if (localFile.data) {
+    return localFile;
+  }
+  const data = await readFileBytes(localFile.file);
+  return data ? { ...localFile, data } : localFile;
+}
 
 export const isAudioRecordingFilename = (filename: string): boolean => AUDIO_RECORDING_FILENAME_RE.test(filename);
 

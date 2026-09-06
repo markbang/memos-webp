@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { useRef } from "react";
 import { type MotionMedia, MotionMediaFamily, MotionMediaRole, MotionMediaSchema } from "@/types/proto/api/v1/attachment_service_pb";
-import type { LocalFile } from "../types/attachment";
+import { type LocalFile, snapshotLocalFile } from "../types/attachment";
 import { useBlobUrls } from "./useBlobUrls";
 
 export const useFileUpload = (onFilesSelected: (localFiles: LocalFile[]) => void) => {
@@ -11,23 +11,28 @@ export const useFileUpload = (onFilesSelected: (localFiles: LocalFile[]) => void
   // (matches the paste/drop/audio paths, which all go through useBlobUrls).
   const { createBlobUrl } = useBlobUrls();
 
-  const handleFileInputChange = (event?: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (event?: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(fileInputRef.current?.files || event?.target.files || []);
     if (files.length === 0 || selectingFlagRef.current) {
       return;
     }
     selectingFlagRef.current = true;
-    const localFiles: LocalFile[] = pairAppleLivePhotoFiles(
-      files.map((file) => ({
-        file,
-        previewUrl: createBlobUrl(file),
-        origin: "upload",
-      })),
-    );
-    onFilesSelected(localFiles);
-    selectingFlagRef.current = false;
-    // Optionally clear input value to allow re-selecting the same file
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      const localFiles: LocalFile[] = pairAppleLivePhotoFiles(
+        files.map((file) => ({
+          file,
+          previewUrl: createBlobUrl(file),
+          origin: "upload",
+        })),
+      );
+      // Snapshot bytes at selection time; see snapshotLocalFile.
+      const snapshotted = await Promise.all(localFiles.map(snapshotLocalFile));
+      onFilesSelected(snapshotted);
+    } finally {
+      selectingFlagRef.current = false;
+      // Optionally clear input value to allow re-selecting the same file
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleUploadClick = (accept = "*") => {
