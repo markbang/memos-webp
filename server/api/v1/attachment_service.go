@@ -226,15 +226,56 @@ func (s *APIV1Service) processAndSaveAttachment(ctx context.Context, create *sto
 	}
 
 	content := io.ReadSeeker(source)
+	// Fork: downscale and transcode raster images to WebP before storage.
+	// Motion photo containers are skipped so their embedded video survives.
+	optimized := false
+	if isWebpOptimizableType(create.Type) && !isAndroidMotionContainer(create.Payload.GetMotionMedia()) {
+		release, err := s.acquireImageProcessingSlot(ctx)
+		if err != nil {
+			return nil, status.Errorf(codes.ResourceExhausted, "too many image processing requests")
+		}
+		raw, readErr := io.ReadAll(source)
+		var result *imageCompressResult
+		var compressErr error
+		if readErr == nil {
+			result, compressErr = compressAttachmentImage(raw, create.Type)
+		}
+		release()
+		switch {
+		case readErr != nil:
+			slog.Warn("image optimization skipped; failed to read upload",
+				slog.String("filename", create.Filename),
+				slog.String("error", readErr.Error()))
+		case compressErr != nil:
+			slog.Warn("image optimization skipped; uploading original",
+				slog.String("type", create.Type),
+				slog.String("filename", create.Filename),
+				slog.String("error", compressErr.Error()))
+		case result != nil:
+			content = bytes.NewReader(result.Blob)
+			create.Type = "image/webp"
+			create.Filename = replaceExtWithWebp(create.Filename)
+			create.Size = int64(len(result.Blob))
+			if metadata := create.Payload.GetMediaMetadata(); metadata != nil {
+				width, height := int32(result.Width), int32(result.Height)
+				metadata.Width = &width
+				metadata.Height = &height
+			}
+			optimized = true
+		}
+	}
+
 	// Strip EXIF metadata from images for privacy protection. Motion photo
 	// containers are kept intact because re-encoding would drop the video.
 	// The decision uses the sniffed bytes as well as the declared type, so a
 	// client cannot skip stripping by labeling a JPEG as something else.
+	// WebP is excluded: our own encoder already emits metadata-free files, and
+	// re-encoding a kept original would change its format for no gain.
 	needsExifStrip, err := shouldStripExifContent(source, create.Type)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to inspect attachment content: %v", err)
 	}
-	if needsExifStrip && !isAndroidMotionContainer(create.Payload.GetMotionMedia()) {
+	if !optimized && create.Type != "image/webp" && needsExifStrip && !isAndroidMotionContainer(create.Payload.GetMotionMedia()) {
 		release, err := s.acquireImageProcessingSlot(ctx)
 		if err != nil {
 			return nil, status.Errorf(codes.ResourceExhausted, "too many image processing requests")

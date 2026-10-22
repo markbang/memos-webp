@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	connectrpc.com/connect v1.20.0
+	github.com/SeriousBug/webp-go-pure v1.2.0
 	github.com/at-wat/ebml-go v0.19.0
 	github.com/aws/aws-sdk-go-v2 v1.43.6
 	github.com/aws/aws-sdk-go-v2/config v1.32.37
