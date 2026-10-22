@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@/contexts/AuthContext";
 import { type MotionMedia, MotionMediaFamily, MotionMediaRole, MotionMediaSchema } from "@/types/proto/api/v1/attachment_service_pb";
 import { mediaMetadataService } from "../services/mediaMetadataService";
-import type { LocalFile } from "../types/attachment";
+import { type LocalFile, snapshotLocalFile } from "../types/attachment";
 import { useBlobUrls } from "./useBlobUrls";
 
 /**
@@ -12,8 +12,11 @@ import { useBlobUrls } from "./useBlobUrls";
  * Media metadata extraction starts here (not at upload time) so every upload
  * path inherits the preference from the LocalFile instead of threading it.
  */
-export const toLocalFiles = (files: File[], options: { createBlobUrl: (file: File) => string; saveMediaMetadata: boolean }): LocalFile[] =>
-  pairAppleLivePhotoFiles(
+export const toLocalFiles = async (
+  files: File[],
+  options: { createBlobUrl: (file: File) => string; saveMediaMetadata: boolean },
+): Promise<LocalFile[]> => {
+  const localFiles = pairAppleLivePhotoFiles(
     files.map((file) => ({
       file,
       previewUrl: options.createBlobUrl(file),
@@ -21,6 +24,8 @@ export const toLocalFiles = (files: File[], options: { createBlobUrl: (file: Fil
       mediaMetadata: options.saveMediaMetadata ? mediaMetadataService.extract(file) : undefined,
     })),
   );
+  return Promise.all(localFiles.map(snapshotLocalFile));
+};
 
 export const useFileUpload = (onFilesSelected: (localFiles: LocalFile[]) => void) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -31,13 +36,13 @@ export const useFileUpload = (onFilesSelected: (localFiles: LocalFile[]) => void
   const { userGeneralSetting } = useAuth();
   const saveMediaMetadata = userGeneralSetting?.saveMediaMetadata ?? false;
 
-  const handleFileInputChange = (event?: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (event?: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(fileInputRef.current?.files || event?.target.files || []);
     if (files.length === 0 || selectingFlagRef.current) {
       return;
     }
     selectingFlagRef.current = true;
-    const localFiles = toLocalFiles(files, { createBlobUrl, saveMediaMetadata });
+    const localFiles = await toLocalFiles(files, { createBlobUrl, saveMediaMetadata });
     onFilesSelected(localFiles);
     selectingFlagRef.current = false;
     // Optionally clear input value to allow re-selecting the same file

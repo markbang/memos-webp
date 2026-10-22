@@ -261,9 +261,9 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
    * otherwise everything joins the attachment list.
    */
   const handleFiles = useCallback(
-    (files: File[], placement: { inline: false } | { inline: true; position?: number }) => {
+    async (files: File[], placement: { inline: false } | { inline: true; position?: number }) => {
       if (getState().ui.isLoading.saving) return;
-      const localFiles = toLocalFiles(files, { createBlobUrl, saveMediaMetadata });
+      const localFiles = await toLocalFiles(files, { createBlobUrl, saveMediaMetadata });
       const { inline, attachments } = placement.inline ? splitInlineLocalFiles(localFiles) : { inline: [], attachments: localFiles };
       attachments.forEach((file) => dispatch(actions.addLocalFile(file)));
       if (placement.inline) inlineImageUpload.insertLocalImages(inline, placement.position);
@@ -272,7 +272,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
   );
 
   /** The ＋ menu's Insert image: inline at the caret. */
-  const handleInsertImages = useCallback((files: File[]) => handleFiles(files, { inline: true }), [handleFiles]);
+  const handleInsertImages = useCallback((files: File[]) => void handleFiles(files, { inline: true }), [handleFiles]);
 
   /**
    * A drop inlines images where they landed. A paste carries no placement
@@ -281,7 +281,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
    */
   const handleEditorFiles = useCallback(
     (files: File[], origin: EditorFileOrigin) =>
-      handleFiles(files, origin.source === "drop" ? { inline: true, position: origin.position } : { inline: false }),
+      void handleFiles(files, origin.source === "drop" ? { inline: true, position: origin.position } : { inline: false }),
     [handleFiles],
   );
 

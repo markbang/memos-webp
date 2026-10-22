@@ -33,6 +33,43 @@ export interface LocalFile {
    * from a source with nothing to extract). The promise never rejects.
    */
   readonly mediaMetadata?: Promise<MediaMetadata | undefined>;
+  /**
+   * Bytes captured when the file was picked. Mobile browsers can revoke the
+   * original File handle before the memo is saved (surfacing as
+   * NotReadableError during upload), so uploads read from this copy.
+   */
+  readonly data?: Uint8Array<ArrayBuffer>;
+}
+
+// Large files keep their lazy handle: copying them up front would defeat the
+// chunked uploader and pin hundreds of megabytes of memory.
+const SNAPSHOT_MAX_BYTES = 64 << 20;
+
+async function readFileBytes(file: File): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  // One retry after a short pause covers transient locks/placeholder downloads.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return new Uint8Array(await file.arrayBuffer());
+    } catch {
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Returns a LocalFile whose {@link LocalFile.data} holds the bytes read right
+ * now. Never throws: a failed read leaves the entry untouched, and the upload
+ * path will surface a readable error naming the file.
+ */
+export async function snapshotLocalFile(localFile: LocalFile): Promise<LocalFile> {
+  if (localFile.data || localFile.file.size > SNAPSHOT_MAX_BYTES) {
+    return localFile;
+  }
+  const data = await readFileBytes(localFile.file);
+  return data ? { ...localFile, data } : localFile;
 }
 
 const AUDIO_RECORDING_FILENAME_RE = /^(?:voice-(?:recording|note)|audio-recording)-(\d{8})-(\d{4,6})/i;

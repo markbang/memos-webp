@@ -34,10 +34,10 @@ const localImage = (mediaMetadata?: LocalFile["mediaMetadata"]): LocalFile => ({
 });
 
 describe("media metadata at file ingest", () => {
-  it("does not extract metadata when the setting is disabled", () => {
+  it("does not extract metadata when the setting is disabled", async () => {
     const file = new File(["image"], "photo.png", { type: "image/png" });
 
-    const [localFile] = toLocalFiles([file], { createBlobUrl, saveMediaMetadata: false });
+    const [localFile] = await toLocalFiles([file], { createBlobUrl, saveMediaMetadata: false });
 
     expect(mocks.extractMetadata).not.toHaveBeenCalled();
     expect(localFile.mediaMetadata).toBeUndefined();
@@ -48,7 +48,7 @@ describe("media metadata at file ingest", () => {
     mocks.extractMetadata.mockResolvedValue(metadata);
     const file = new File(["image"], "photo.png", { type: "image/png" });
 
-    const [localFile] = toLocalFiles([file], { createBlobUrl, saveMediaMetadata: true });
+    const [localFile] = await toLocalFiles([file], { createBlobUrl, saveMediaMetadata: true });
 
     expect(mocks.extractMetadata).toHaveBeenCalledWith(file);
     await expect(localFile.mediaMetadata).resolves.toEqual(metadata);
@@ -92,7 +92,7 @@ describe("uploadService media metadata", () => {
     mocks.extractMetadata.mockResolvedValue(metadata);
     const file = new File(["image"], "photo.png", { type: "image/png" });
 
-    await uploadService.uploadFiles(toLocalFiles([file], { createBlobUrl, saveMediaMetadata: true }));
+    await uploadService.uploadFiles(await toLocalFiles([file], { createBlobUrl, saveMediaMetadata: true }));
 
     expect(mocks.uploadAttachment.mock.calls[0][0].upload.value.attachment.mediaMetadata).toEqual(metadata);
   });

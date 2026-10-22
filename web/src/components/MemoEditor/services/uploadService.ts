@@ -11,7 +11,10 @@ const MAX_CONCURRENT_UPLOADS = 4;
 
 export const uploadService = {
   async uploadFile(localFile: LocalFile, signal?: AbortSignal): Promise<Attachment> {
-    const { file, motionMedia } = localFile;
+    const { file, motionMedia, data } = localFile;
+    // Prefer the bytes captured at selection: the original File handle may
+    // have been revoked by the browser by the time the memo is saved.
+    const source = data ? new Blob([data], { type: file.type }) : file;
     const mediaMetadata = await localFile.mediaMetadata;
     const spec = create(UploadAttachmentSpecSchema, {
       attachment: create(AttachmentSchema, {
@@ -20,7 +23,7 @@ export const uploadService = {
         motionMedia: motionMedia ? create(MotionMediaSchema, motionMedia) : undefined,
         mediaMetadata,
       }),
-      totalSize: BigInt(file.size),
+      totalSize: BigInt(source.size),
     });
     // The spec call carries no data so that retrying it after a lost response
     // can at worst orphan an upload, never create a duplicate attachment.
@@ -31,12 +34,12 @@ export const uploadService = {
     const chunkSize = Math.min(initial.maxChunkSize, DEFAULT_CHUNK_SIZE);
     for (let offset = 0; ; ) {
       signal?.throwIfAborted();
-      const end = Math.min(offset + chunkSize, file.size);
+      const end = Math.min(offset + chunkSize, source.size);
       const request: Pick<UploadAttachmentRequest, "upload" | "writeOffset" | "data" | "finishWrite"> = {
         upload: { case: "uploadId", value: initial.uploadId },
         writeOffset: BigInt(offset),
-        data: new Uint8Array(await file.slice(offset, end).arrayBuffer()),
-        finishWrite: end === file.size,
+        data: new Uint8Array(await source.slice(offset, end).arrayBuffer()),
+        finishWrite: end === source.size,
       };
       // Retrying the identical last write is safe even if its response was lost
       // after the server finalized the attachment.
