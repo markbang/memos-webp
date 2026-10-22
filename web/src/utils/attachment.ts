@@ -9,7 +9,7 @@ export const getAttachmentUrl = (attachment: Attachment) => {
 };
 
 // Appends a thumbnail or motion selector only to share-mode links; other external links fall back to the server-managed attachment URL.
-const withShareTokenParam = (externalLink: string | undefined, key: string): string | undefined => {
+const withShareTokenParam = (externalLink: string | undefined, key: string, extraParams?: Record<string, string>): string | undefined => {
   if (!externalLink) {
     return undefined;
   }
@@ -18,6 +18,9 @@ const withShareTokenParam = (externalLink: string | undefined, key: string): str
     return undefined;
   }
   url.searchParams.set(key, "true");
+  for (const [name, value] of Object.entries(extraParams ?? {})) {
+    url.searchParams.set(name, value);
+  }
   return url.toString();
 };
 
@@ -31,12 +34,14 @@ export const getAttachmentThumbnailUrl = (attachment: Attachment) => {
 };
 
 export const getAttachmentMotionClipUrl = (attachment: Attachment) => {
-  const shareUrl = withShareTokenParam(attachment.externalLink, "motion");
+  // v=2 busts CDN/browser caches created before motion clips were transcoded
+  // from HEVC to H.264.
+  const shareUrl = withShareTokenParam(attachment.externalLink, "motion", { v: "2" });
   if (shareUrl) {
     return shareUrl;
   }
 
-  return `${window.location.origin}/file/${attachment.name}/${attachment.filename}?motion=true`;
+  return `${window.location.origin}/file/${attachment.name}/${attachment.filename}?motion=true&v=2`;
 };
 
 export const getAttachmentType = (attachment: Attachment) => {

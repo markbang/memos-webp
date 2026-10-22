@@ -48,6 +48,9 @@ const (
 	// maxConcurrentThumbnails limits concurrent thumbnail generation to prevent memory exhaustion.
 	maxConcurrentThumbnails = 3
 
+	// maxConcurrentMotionTranscodes limits concurrent ffmpeg re-encodes.
+	maxConcurrentMotionTranscodes = 2
+
 	// thumbnailFailedMarkerSuffix names the empty file left next to a
 	// thumbnail that could not be generated, so an image that fails to decode
 	// is not decoded again on every request.
@@ -112,6 +115,9 @@ type FileServerService struct {
 
 	// thumbnailSemaphore limits concurrent thumbnail generation.
 	thumbnailSemaphore *semaphore.Weighted
+
+	// motionSemaphore limits concurrent motion clip transcodes.
+	motionSemaphore *semaphore.Weighted
 }
 
 // NewFileServerService creates a new file server service.
@@ -121,6 +127,7 @@ func NewFileServerService(profile *profile.Profile, store *store.Store, secret s
 		Store:              store,
 		authenticator:      auth.NewAuthenticator(store, secret),
 		thumbnailSemaphore: semaphore.NewWeighted(maxConcurrentThumbnails),
+		motionSemaphore:    semaphore.NewWeighted(maxConcurrentMotionTranscodes),
 	}
 }
 
@@ -625,6 +632,16 @@ func (s *FileServerService) getOrExtractMotionClip(ctx context.Context, attachme
 		return blob, nil
 	}
 
+	if err := s.motionSemaphore.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	defer s.motionSemaphore.Release(1)
+
+	// Another request may have populated the cache while we waited.
+	if blob, err := os.ReadFile(motionPath); err == nil {
+		return blob, nil
+	}
+
 	blob, err := s.getAttachmentBlob(ctx, attachment)
 	if err != nil {
 		return nil, err
@@ -633,6 +650,22 @@ func (s *FileServerService) getOrExtractMotionClip(ctx context.Context, attachme
 	videoBlob, _ := motionphoto.ExtractVideo(blob)
 	if len(videoBlob) == 0 {
 		return nil, errors.New("motion video not found")
+	}
+
+	// Android Motion Photos embed HEVC, which Chromium and Firefox cannot
+	// decode. Re-encode to H.264 so the LIVE preview plays everywhere; without
+	// ffmpeg we still serve the original clip rather than failing the request.
+	// The encode outlives a canceled request so the cache is still populated
+	// when a hover preview is abandoned mid-transcode.
+	transcoded, err := motionphoto.TranscodeToH264(context.WithoutCancel(ctx), videoBlob)
+	if err != nil {
+		if !errors.Is(err, motionphoto.ErrFFmpegUnavailable) {
+			slog.Warn("failed to transcode motion clip; serving original",
+				slog.String("attachment", attachment.UID),
+				slog.String("error", err.Error()))
+		}
+	} else {
+		videoBlob = transcoded
 	}
 
 	if err := os.WriteFile(motionPath, videoBlob, 0644); err != nil {
@@ -648,7 +681,9 @@ func (s *FileServerService) getMotionPath(attachment *store.Attachment) (string,
 		return "", errors.Wrap(err, "failed to create motion cache folder")
 	}
 
-	return filepath.Join(cacheFolder, attachment.UID+".mp4"), nil
+	// Bump the suffix whenever the extraction/encoding pipeline changes so
+	// previously cached clips (e.g. HEVC) are not served forever.
+	return filepath.Join(cacheFolder, attachment.UID+".v2.mp4"), nil
 }
 
 // =============================================================================
