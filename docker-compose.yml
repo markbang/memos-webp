@@ -3,13 +3,13 @@
 # 注意：不要用上游镜像 neosmemo/memos:0.31.0 —— 那是原版，没有 WebP 压缩。
 # 本仓库的镜像需要自己构建并推送（构建前必须先在 web/ 下 pnpm build 出 dist）：
 #
-#   docker build -f scripts/Dockerfile -t ghcr.io/markbang/memos-webp:0.31.1-webp .
-#   docker push ghcr.io/markbang/memos-webp:0.31.1-webp
+#   docker build -f scripts/Dockerfile -t ghcr.io/markbang/memos-webp:0.31.2-webp .
+#   docker push ghcr.io/markbang/memos-webp:0.31.2-webp
 #
 # 然后直接 docker compose up -d；或用 build: 本地构建（见下方注释块）。
 services:
   memos:
-    image: ${MEMOS_IMAGE:-ghcr.io/markbang/memos-webp:0.31.1-webp}
+    image: ${MEMOS_IMAGE:-ghcr.io/markbang/memos-webp:0.31.2-webp}
     # 想本地构建而不是拉镜像时，取消下面注释并去掉上面 image 行：
     # build:
     #   context: .

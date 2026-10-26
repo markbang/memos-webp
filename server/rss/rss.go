@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/feeds"
 	"github.com/labstack/echo/v5"
 
+	"github.com/usememos/memos/internal/profile"
 	"github.com/usememos/memos/markdown"
 	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/store"
@@ -39,6 +40,7 @@ type cacheEntry struct {
 }
 
 type RSSService struct {
+	Profile         *profile.Profile
 	Store           *store.Store
 	MarkdownService markdown.Service
 
@@ -53,8 +55,9 @@ type RSSHeading struct {
 	Language    string
 }
 
-func NewRSSService(store *store.Store, markdownService markdown.Service) *RSSService {
+func NewRSSService(profile *profile.Profile, store *store.Store, markdownService markdown.Service) *RSSService {
 	return &RSSService{
+		Profile:         profile,
 		Store:           store,
 		MarkdownService: markdownService,
 		cache:           make(map[string]*cacheEntry),
@@ -100,8 +103,7 @@ func (s *RSSService) GetExploreRSS(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to find memo list").Wrap(err)
 	}
 
-	baseURL := c.Scheme() + "://" + c.Request().Host
-	rss, lastModified, err := s.generateRSSFromMemoList(ctx, memoList, baseURL, nil)
+	rss, lastModified, err := s.generateRSSFromMemoList(ctx, memoList, s.baseURL(c), nil)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to generate rss").Wrap(err)
 	}
@@ -158,8 +160,7 @@ func (s *RSSService) GetUserRSS(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to find memo list").Wrap(err)
 	}
 
-	baseURL := c.Scheme() + "://" + c.Request().Host
-	rss, lastModified, err := s.generateRSSFromMemoList(ctx, memoList, baseURL, user)
+	rss, lastModified, err := s.generateRSSFromMemoList(ctx, memoList, s.baseURL(c), user)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to generate rss").Wrap(err)
 	}
@@ -168,6 +169,15 @@ func (s *RSSService) GetUserRSS(c *echo.Context) error {
 	etag := s.putInCache(cacheKey, rss, lastModified)
 	s.setRSSHeaders(c, etag, lastModified)
 	return c.String(http.StatusOK, rss)
+}
+
+// baseURL prefers the configured instance URL so feed links keep the public
+// scheme (https) even when TLS terminates before the app server.
+func (s *RSSService) baseURL(c *echo.Context) string {
+	if s.Profile != nil && s.Profile.InstanceURL != "" {
+		return strings.TrimSuffix(s.Profile.InstanceURL, "/")
+	}
+	return c.Scheme() + "://" + c.Request().Host
 }
 
 func (s *RSSService) generateRSSFromMemoList(ctx context.Context, memoList []*store.Memo, baseURL string, user *store.User) (string, time.Time, error) {

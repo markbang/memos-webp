@@ -1,16 +1,16 @@
 name: Build and Publish WebP Image
 
 # 手动触发：Actions -> Build and Publish WebP Image -> Run workflow
-# （默认 tag 为 0.31.1-webp，与 docker-compose.yml 的默认镜像一致）
-# 或推送形如 v0.31.1-webp 的 git tag 自动触发（tag 名剥掉前导 v 作为镜像 tag：
-# v0.31.1-webp -> 0.31.1-webp）。
+# （默认 tag 为 0.31.2-webp，与 docker-compose.yml 的默认镜像一致）
+# 或推送形如 v0.31.2-webp 的 git tag 自动触发（tag 名剥掉前导 v 作为镜像 tag：
+# v0.31.2-webp -> 0.31.2-webp）。
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "镜像 tag（例如 0.31.1-webp）"
+        description: "镜像 tag（例如 0.31.2-webp）"
         required: true
-        default: "0.31.1-webp"
+        default: "0.31.2-webp"
   push:
     tags:
       - "v*"
@@ -34,7 +34,7 @@ jobs:
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             value="${{ github.ref_name }}"
-            # git tag 带 v 前缀（v0.31.1-webp），镜像/版本号去掉 v 保持风格一致
+            # git tag 带 v 前缀（v0.31.2-webp），镜像/版本号去掉 v 保持风格一致
             echo "value=${value#v}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
