@@ -51,6 +51,9 @@ type Service interface {
 	// RenderMarkdown renders goldmark AST back to markdown text
 	RenderMarkdown(content []byte) (string, error)
 
+	// RenderHTML renders markdown content to HTML (used by the RSS feed).
+	RenderHTML(content []byte) (string, error)
+
 	// GenerateSnippet creates plain text summary
 	GenerateSnippet(content []byte, maxLength int) (string, error)
 
@@ -280,6 +283,20 @@ func (s *service) RenderMarkdown(content []byte) (string, error) {
 
 	mdRenderer := renderer.NewMarkdownRenderer()
 	return mdRenderer.Render(root, content), nil
+}
+
+// RenderHTML renders markdown content to HTML using goldmark's built-in HTML renderer.
+func (s *service) RenderHTML(content []byte) (string, error) {
+	root, err := s.parse(content)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := s.md.Renderer().Render(&buf, content, root); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 // GenerateSnippet creates a plain text summary from markdown content.

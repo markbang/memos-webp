@@ -10,6 +10,7 @@ import (
 	"github.com/yuin/goldmark/ast"
 	goldmarkextension "github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 
@@ -39,6 +40,11 @@ func (*gfmLinkify) Extend(markdown goldmark.Markdown) {
 		parser.WithASTTransformers(
 			util.Prioritized(&gfmLinkifyASTTransformer{}, 900),
 			util.Prioritized(&gfmEmailASTTransformer{}, 950),
+		),
+	)
+	markdown.Renderer().AddOptions(
+		renderer.WithNodeRenderers(
+			util.Prioritized(&gfmEmailNodeRenderer{}, 500),
 		),
 	)
 }
@@ -292,4 +298,26 @@ func replaceInlineMatches(textNode *ast.Text, matches []inlineNodeMatch) {
 		insertSplitTextBefore(parent, textNode, textNode, text.NewSegment(cursor, segment.Stop), true)
 	}
 	parent.RemoveChild(parent, textNode)
+}
+
+type gfmEmailNodeRenderer struct{}
+
+func (*gfmEmailNodeRenderer) RegisterFuncs(registerer renderer.NodeRendererFuncRegisterer) {
+	registerer.Register(mast.KindGFMEmail, renderGFMEmailNode)
+}
+
+func renderGFMEmailNode(writer util.BufWriter, _ []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+	emailNode, ok := node.(*mast.GFMEmailNode)
+	if !ok {
+		return ast.WalkContinue, nil
+	}
+	_, _ = writer.WriteString(`<a href="mailto:`)
+	_, _ = writer.Write(util.EscapeHTML(emailNode.Address))
+	_, _ = writer.WriteString(`">`)
+	_, _ = writer.Write(util.EscapeHTML(emailNode.Address))
+	_, _ = writer.WriteString(`</a>`)
+	return ast.WalkContinue, nil
 }

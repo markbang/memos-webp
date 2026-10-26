@@ -15,6 +15,9 @@
 | `internal/motionphoto/transcode.go` | **新增**。Motion Photo 内嵌片段转码为 H.264/MP4：Android 原片多为 HEVC，Chrome/Firefox 无法解码，LIVE 预览会「有徽标但播不动」 |
 | `server/fileserver/fileserver.go` | `?motion=true` 提取后先转码再缓存（缓存名升级为 `<uid>.v2.mp4`）；ffmpeg 缺失或转码失败时回退原片段 |
 | `web/src/utils/attachment.ts` | Motion 片段 URL 加 `v=2`，避开 CDN/浏览器里旧的 HEVC 缓存 |
+| `server/rss/rss.go` | **新增（恢复）**。上游 v0.31 删掉了 RSS（#6243），这里把 `/explore/rss.xml`、`/u/:username/rss.xml` 恢复回来，保留 ETag/Last-Modified 与服务端缓存 |
+| `markdown/**` | 恢复 `RenderHTML` 以及 tag / mention / email 的 HTML 渲染器：上游为了让 RSS 消失，把这些一并删了 |
+| `server/server.go`、`server/frontend/frontend.go` | 注册 RSS 路由，并让 SPA fallback 放行 `*/rss.xml` |
 
 ## 行为规则
 
@@ -27,6 +30,7 @@
 - 处理槽信号量（并发 2）复用上游已有设施，无新增风险面。
 - Motion Photo（Live）播放：内嵌视频统一转 H.264（`-preset veryfast -crf 23`，去掉音轨与元数据），结果缓存在 `.motion_cache/<uid>.v2.mp4`，只转一次。
 - 转码依赖系统 `ffmpeg`（镜像已内置）。没有 ffmpeg 时照旧返回原始片段，不会让请求失败。
+- RSS 只在实例为 public 访问模式时可用；private 模式返回 404（与上游 v0.30 行为一致）。
 
 ## 配置（环境变量，可省）
 
@@ -50,7 +54,7 @@ docker build -f scripts/Dockerfile -t memos-webp .
 
 GitHub Actions（`.github/workflows/build-publish-webp.yml`）已配好：
 
-- **手动触发**：仓库 Actions 页 → *Build and Publish WebP Image* → Run workflow（tag 默认 `0.31.0-webp`）；
+- **手动触发**：仓库 Actions 页 → *Build and Publish WebP Image* → Run workflow（tag 默认 `0.31.1-webp`）；
 - **自动触发**：推送 `v*` tag。
 
 流程 = pnpm 构建前端 → buildx 双架构（linux/amd64 + linux/arm64）→ 直接推 ghcr 并打 manifest。
@@ -59,8 +63,8 @@ GitHub Actions（`.github/workflows/build-publish-webp.yml`）已配好：
 
 ```bash
 cd web && pnpm install && pnpm release && cd ..
-docker build -f scripts/Dockerfile -t ghcr.io/markbang/memos-webp:0.31.0-webp .
-docker push ghcr.io/markbang/memos-webp:0.31.0-webp
+docker build -f scripts/Dockerfile -t ghcr.io/markbang/memos-webp:0.31.1-webp .
+docker push ghcr.io/markbang/memos-webp:0.31.1-webp
 ```
 
 ## 存量迁移工具 `tools/r2-webp-migrate`
