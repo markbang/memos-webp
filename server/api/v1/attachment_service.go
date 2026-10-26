@@ -234,6 +234,11 @@ func (s *APIV1Service) processAndSaveAttachment(ctx context.Context, create *sto
 		if err != nil {
 			return nil, status.Errorf(codes.ResourceExhausted, "too many image processing requests")
 		}
+		// Chunked uploads hand over a temp file whose read offset already
+		// advanced past the sniffed header; rewind before reading all bytes.
+		if _, seekErr := source.Seek(0, io.SeekStart); seekErr != nil {
+			return nil, status.Errorf(codes.Internal, "failed to rewind attachment content: %v", seekErr)
+		}
 		raw, readErr := io.ReadAll(source)
 		var result *imageCompressResult
 		var compressErr error
